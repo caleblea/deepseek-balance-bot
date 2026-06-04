@@ -159,10 +159,54 @@ def pin_message(message_id):
 
     try:
         result = telegram_post("pinChatMessage", payload)
-        if not result.get("ok"):
+        if result.get("ok", False):
+            print(f"已置顶消息：{message_id}")
+            return True
+        else:
             print(f"置顶消息失败：{result}")
+            return False
     except (error.URLError, json.JSONDecodeError) as exc:
         print(f"置顶消息失败：{exc}")
+        return False
+
+
+def get_me():
+    """返回 bot 的信息（getMe）。"""
+    try:
+        return telegram_post("getMe", {})
+    except (error.URLError, json.JSONDecodeError) as exc:
+        print(f"getMe 请求失败：{exc}")
+        return None
+
+
+def get_chat():
+    """获取 chat 信息（包含 pinned_message）。"""
+    payload = {"chat_id": TELEGRAM_CHAT_ID}
+    try:
+        return telegram_post("getChat", payload)
+    except (error.URLError, json.JSONDecodeError) as exc:
+        print(f"getChat 请求失败：{exc}")
+        return None
+
+
+def delete_message(message_id):
+    """删除消息。"""
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "message_id": message_id,
+    }
+
+    try:
+        result = telegram_post("deleteMessage", payload)
+        if result.get("ok", False):
+            print(f"消息 {message_id} 已删除")
+            return True
+        else:
+            print(f"删除消息失败：{result}")
+            return False
+    except (error.URLError, json.JSONDecodeError) as exc:
+        print(f"删除消息失败：{exc}")
+        return False
 
 
 def edit_message(message_id, text):
@@ -176,7 +220,11 @@ def edit_message(message_id, text):
 
     try:
         result = telegram_post("editMessageText", payload)
-        return result.get("ok", False)
+        if result.get("ok", False):
+            return True
+        else:
+            print(f"修改消息失败：{result}")
+            return False
     except (error.URLError, json.JSONDecodeError) as exc:
         print(f"修改消息失败：{exc}")
         return False
@@ -203,6 +251,51 @@ def main():
     print("DeepSeek 余额监控脚本已启动...")
 
     msg_id = load_message_id()
+    if msg_id:
+        print(f"已加载消息 ID：{msg_id}")
+    else:
+        print("未找到已保存的消息 ID，将创建新消息。")
+
+    # 检查当前聊天的置顶消息，尝试恢复或置顶正确的余额消息
+    bot_info = get_me()
+    bot_id = None
+    if bot_info and bot_info.get("ok"):
+        bot_id = bot_info["result"].get("id")
+
+    chat_info = get_chat()
+    if chat_info and chat_info.get("ok"):
+        chat = chat_info["result"]
+        pinned = chat.get("pinned_message")
+        if pinned:
+            pinned_id = pinned.get("message_id")
+            # 支持多种来源：直接发送的 from、转发的 forward_from、以及 channel 形式的 sender_chat
+            pinned_from = (
+                pinned.get("from", {}) or {}
+            ).get("id") or (
+                pinned.get("forward_from", {}) or {}
+            ).get("id") or (
+                pinned.get("sender_chat", {}) or {}
+            ).get("id")
+            pinned_text = pinned.get("text", "") or pinned.get("caption", "") or ""
+
+            # 如果置顶的是 bot 自己发的、且看起来是余额消息，则把本地 msg_id 更新为该消息
+            if bot_id and pinned_from == bot_id and "💰" in pinned_text:
+                if pinned_id != msg_id:
+                    msg_id = pinned_id
+                    save_message_id(msg_id)
+                    print(f"已恢复并保存置顶余额消息 ID：{msg_id}")
+            else:
+                # 如果本地有 msg_id，但它未被置顶，尝试再次置顶本地消息
+                if msg_id and pinned_id != msg_id:
+                    print(f"当前置顶消息不是保存的余额消息，尝试重新置顶本地消息 {msg_id}...")
+                    if pin_message(msg_id):
+                        print(f"已成功将消息 {msg_id} 置顶")
+                    else:
+                        # 如果置顶失败，且置顶的消息看起来是余额消息（可能来自其他 bot），则采用该置顶消息
+                        if pinned_from and "💰" in pinned_text:
+                            msg_id = pinned_id
+                            save_message_id(msg_id)
+                            print(f"采用现有置顶余额消息 ID：{msg_id}")
 
     while True:
         balance = get_deepseek_balance()
@@ -210,12 +303,14 @@ def main():
 
         success = False
         if msg_id:
+            print(f"尝试编辑消息 {msg_id}...")
             success = edit_message(msg_id, message_text)
 
         if not success:
             print("正在创建新的置顶消息...")
             msg_id = send_new_message(message_text)
             if msg_id:
+                print(f"新消息已创建，ID：{msg_id}")
                 save_message_id(msg_id)
         else:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] 余额已更新。")
