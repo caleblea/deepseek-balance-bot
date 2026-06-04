@@ -2,8 +2,18 @@ import html
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from urllib import error, request
+
+
+# 时区偏移（小时），可通过环境变量 TIMEZONE_OFFSET 设置，默认 +8（北京时间）
+TIMEZONE_OFFSET = int(os.environ.get("TIMEZONE_OFFSET", "8"))
+
+
+def now_local():
+    """返回当前本地时间（根据 TIMEZONE_OFFSET）"""
+    tz = timezone(timedelta(hours=TIMEZONE_OFFSET))
+    return datetime.now(tz)
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -107,7 +117,7 @@ def money_symbol(currency):
 
 def format_message(balance_data):
     """格式化发送给 Telegram 的消息。"""
-    time_str = datetime.now().strftime("%H:%M")
+    time_str = now_local().strftime("%H:%M")
 
     if balance_data["success"]:
         symbol = money_symbol(balance_data["currency"])
@@ -130,7 +140,7 @@ def telegram_post(method, payload):
 
 
 def send_new_message(text):
-    """发送一条新消息，并尝试置顶。"""
+    """发送一条新消息，先清空旧置顶再置顶新消息。"""
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
@@ -141,6 +151,8 @@ def send_new_message(text):
         result = telegram_post("sendMessage", payload)
         if result.get("ok"):
             msg_id = result["result"]["message_id"]
+            # 先清空所有置顶，再置顶新的，避免出现多个置顶
+            unpin_all()
             pin_message(msg_id)
             return msg_id
         print(f"发送新消息失败：{result}")
@@ -177,6 +189,22 @@ def get_me():
     except (error.URLError, json.JSONDecodeError) as exc:
         print(f"getMe 请求失败：{exc}")
         return None
+
+
+def unpin_all():
+    """取消所有置顶消息，保证只有一条余额消息被置顶。"""
+    payload = {"chat_id": TELEGRAM_CHAT_ID}
+    try:
+        result = telegram_post("unpinAllChatMessages", payload)
+        if result.get("ok", False):
+            print("已清空所有置顶消息")
+            return True
+        else:
+            print(f"取消置顶失败：{result}")
+            return False
+    except (error.URLError, json.JSONDecodeError) as exc:
+        print(f"取消置顶失败：{exc}")
+        return False
 
 
 def get_chat():
@@ -256,7 +284,10 @@ def main():
     else:
         print("未找到已保存的消息 ID，将创建新消息。")
 
-    # 检查当前聊天的置顶消息，尝试恢复或置顶正确的余额消息
+    # 先清空多余的置顶消息，保证只有一条
+    unpin_all()
+
+    # 检查当前聊天的置顶消息，尝试恢复正确的余额消息
     bot_info = get_me()
     bot_id = None
     if bot_info and bot_info.get("ok"):
@@ -313,7 +344,7 @@ def main():
                 print(f"新消息已创建，ID：{msg_id}")
                 save_message_id(msg_id)
         else:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 余额已更新。")
+            print(f"[{now_local().strftime('%H:%M:%S')}] 余额已更新。")
 
         time.sleep(INTERVAL_SECONDS)
 
