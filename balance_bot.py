@@ -344,7 +344,9 @@ def main():
                 print(f"新消息已创建，ID：{msg_id}")
                 save_message_id(msg_id)
         else:
+            # 编辑成功，重新置顶（防止被启动时的 unpin_all 清掉了）
             print(f"[{now_local().strftime('%H:%M:%S')}] 余额已更新。")
+            pin_message(msg_id)
 
         time.sleep(INTERVAL_SECONDS)
 
