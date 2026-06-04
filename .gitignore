@@ -5,3 +5,4 @@ tg_msg_id.txt
 bot.log
 .venv/
 __pycache__/
+.env
