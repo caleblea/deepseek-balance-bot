@@ -1,0 +1,7 @@
+.vscode/
+*.key
+*.pem
+tg_msg_id.txt
+bot.log
+.venv/
+__pycache__/
