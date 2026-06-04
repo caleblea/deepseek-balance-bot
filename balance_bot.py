@@ -1,6 +1,7 @@
 import html
 import json
 import os
+import subprocess
 import time
 from datetime import datetime, timezone, timedelta
 from urllib import error, request
@@ -115,13 +116,53 @@ def money_symbol(currency):
     return currency
 
 
+def get_uptime():
+    """获取系统运行时间，返回精简字符串，如 '6h' 或 '3d 2h'。"""
+    try:
+        with open("/proc/uptime", "r") as f:
+            seconds = float(f.read().split()[0])
+        hours = int(seconds // 3600)
+        days = hours // 24
+        hours = hours % 24
+        if days > 0:
+            return f"{days}d {hours}h"
+        return f"{hours}h"
+    except (OSError, ValueError):
+        return "?h"
+
+
+def get_service_status():
+    """检查自定义服务是否在运行，返回简洁状态字符串。"""
+    services = [
+        ("SS", "shadowsocks-rust"),
+        ("Bot", "deepseek-balance-bot"),
+    ]
+    parts = []
+    for label, name in services:
+        try:
+            result = subprocess.run(
+                ["systemctl", "is-active", "--quiet", name],
+                capture_output=False,
+                timeout=5,
+            )
+            parts.append(f"{'🟢' if result.returncode == 0 else '🔴'}{label}")
+        except Exception:
+            parts.append(f"⚪{label}")
+    return " ".join(parts)
+
+
 def format_message(balance_data):
     """格式化发送给 Telegram 的消息。"""
     time_str = now_local().strftime("%H:%M")
+    uptime_str = get_uptime()
+    services_str = get_service_status()
 
     if balance_data["success"]:
         symbol = money_symbol(balance_data["currency"])
-        return f"💰 {html.escape(symbol)} {html.escape(str(balance_data['total']))} | {time_str}"
+        return (
+            f"💰 {html.escape(symbol)}{html.escape(str(balance_data['total']))} | {time_str}\n"
+            f"🆙 {uptime_str} | {services_str}"
+        )
 
     return f"❌ 错误"
 
