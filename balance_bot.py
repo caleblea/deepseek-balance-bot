@@ -482,6 +482,9 @@ def main():
             success = edit_message(msg_id, message_text)
 
         if not success:
+            if msg_id:
+                print(f"编辑消息 {msg_id} 失败，尝试删除该旧消息...")
+                delete_message(msg_id)
             print("正在创建新的置顶消息...")
             msg_id = send_new_message(message_text)
             if msg_id:
@@ -514,6 +517,9 @@ def run_once():
         success = edit_message(msg_id, message_text)
 
     if not success:
+        if msg_id:
+            print(f"编辑消息 {msg_id} 失败，尝试删除该旧消息...")
+            delete_message(msg_id)
         print("正在创建新的置顶消息...")
         msg_id = send_new_message(message_text)
         if msg_id:
