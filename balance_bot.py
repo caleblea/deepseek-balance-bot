@@ -194,8 +194,10 @@ def send_new_message(text):
         if result.get("ok"):
             msg_id = result["result"]["message_id"]
             # 先清空所有置顶，再置顶新的，避免出现多个置顶
-            unpin_all()
-            pin_message(msg_id)
+            if unpin_all():
+                pin_message(msg_id)
+            else:
+                print("清空旧置顶失败，放弃置顶新消息以避免出现多个置顶")
             return msg_id
         print(f"发送新消息失败：{result}")
     except (error.URLError, json.JSONDecodeError) as exc:
@@ -327,7 +329,8 @@ def main():
         print("未找到已保存的消息 ID，将创建新消息。")
 
     # 先清空多余的置顶消息，保证只有一条
-    unpin_all()
+    if not unpin_all():
+        print("启动时清空置顶失败，可能被限流，稍后重试")
 
     # 检查当前聊天的置顶消息，尝试恢复正确的余额消息
     bot_info = get_me()
@@ -402,8 +405,6 @@ def run_once():
         print(f"已加载消息 ID：{msg_id}")
     else:
         print("未找到已保存的消息 ID，将创建新消息。")
-
-    unpin_all()
 
     balance = get_deepseek_balance()
     message_text = format_message(balance)
