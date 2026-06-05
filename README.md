@@ -84,8 +84,10 @@ https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates
 
 ### 3. Clone & Configure (克隆与配置)
 
-使用 `sudo` 将项目克隆到 `/opt` 目录，并**立即修改目录所有者**为当前用户，以防止后续测试和 Hook 写入文件时遭遇权限不足错误：
+根据你是**首次安装**还是**更新已有的版本**，选择以下相应的步骤：
 
+#### 选项 A：首次安装
+使用 `sudo` 将项目克隆到 `/opt` 目录，并**立即修改目录所有者**为当前用户，以防止后续测试和 Hook 写入文件时遭遇权限不足错误：
 ```bash
 sudo mkdir -p /opt
 sudo git clone https://github.com/YOUR_USER/deepseek-balance-bot.git /opt/deepseek-balance-bot
@@ -94,6 +96,15 @@ sudo chown -R $USER:$USER /opt/deepseek-balance-bot
 cd /opt/deepseek-balance-bot
 cp .env.example .env
 ```
+
+#### 选项 B：更新已有版本
+如果此前已经在 `/opt` 中克隆了该项目，请**不要**重复运行 `git clone`，直接进入目录拉取最新代码即可：
+```bash
+cd /opt/deepseek-balance-bot
+git pull
+```
+> 💡 **提示**：如果是之前使用 `sudo` 部署导致现在有权限报错，可以随时运行 `sudo chown -R $USER:$USER /opt/deepseek-balance-bot` 来修复权限。
+
 
 使用编辑器（如 `nano` 或 `vi`）修改 `.env` 配置文件：
 ```bash
