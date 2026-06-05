@@ -2,6 +2,7 @@ import html
 import json
 import os
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone, timedelta
 from urllib import error, request
@@ -392,8 +393,42 @@ def main():
         time.sleep(INTERVAL_SECONDS)
 
 
+def run_once():
+    """单次执行：获取余额并更新置顶消息后退出。"""
+    require_config()
+
+    msg_id = load_message_id()
+    if msg_id:
+        print(f"已加载消息 ID：{msg_id}")
+    else:
+        print("未找到已保存的消息 ID，将创建新消息。")
+
+    unpin_all()
+
+    balance = get_deepseek_balance()
+    message_text = format_message(balance)
+
+    success = False
+    if msg_id:
+        print(f"尝试编辑消息 {msg_id}...")
+        success = edit_message(msg_id, message_text)
+
+    if not success:
+        print("正在创建新的置顶消息...")
+        msg_id = send_new_message(message_text)
+        if msg_id:
+            print(f"新消息已创建，ID：{msg_id}")
+            save_message_id(msg_id)
+    else:
+        print(f"[{now_local().strftime('%H:%M:%S')}] 余额已更新。")
+        pin_message(msg_id)
+
+
 if __name__ == "__main__":
     try:
-        main()
+        if len(sys.argv) > 1 and sys.argv[1] == "--once":
+            run_once()
+        else:
+            main()
     except KeyboardInterrupt:
         print("已停止。")
