@@ -7,3 +7,4 @@ bot.log
 .venv/
 __pycache__/
 .env
+balance_bot.pid

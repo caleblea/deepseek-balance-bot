@@ -21,6 +21,10 @@ def now_local():
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_FILE = os.path.join(BASE_DIR, ".env")
 MSG_ID_FILE = os.path.join(BASE_DIR, "tg_msg_id.txt")
+PID_FILE = os.path.join(BASE_DIR, "balance_bot.pid")
+
+# 跟踪 PID 锁是否已获取，用于 __main__ 的 finally 清理
+_LOCK_HELD = False
 
 
 def load_dotenv(path=ENV_FILE):
@@ -76,8 +80,12 @@ def require_config():
         raise RuntimeError(f"缺少必要配置：{', '.join(missing)}。请复制 .env.example 为 .env 后填写。")
 
 
-def get_deepseek_balance():
-    """获取 DeepSeek 账户余额。"""
+RETRY_COUNT = int(os.getenv("RETRY_COUNT", "3"))
+RETRY_INTERVAL = int(os.getenv("RETRY_INTERVAL", "5"))
+
+
+def _do_get_deepseek_balance():
+    """获取 DeepSeek 账户余额（单次请求，无重试）。"""
     url = "https://api.deepseek.com/user/balance"
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
@@ -109,6 +117,21 @@ def get_deepseek_balance():
         return {"success": False, "error": "DeepSeek 返回的不是有效 JSON"}
 
 
+def get_deepseek_balance():
+    """获取 DeepSeek 账户余额，失败时自动重试。"""
+    last_error = None
+    for attempt in range(1, RETRY_COUNT + 1):
+        result = _do_get_deepseek_balance()
+        if result["success"]:
+            return result
+        last_error = result["error"]
+        if attempt < RETRY_COUNT:
+            print(f"获取余额失败（第 {attempt}/{RETRY_COUNT} 次）：{last_error}，{RETRY_INTERVAL} 秒后重试...")
+            time.sleep(RETRY_INTERVAL)
+    print(f"获取余额失败，已重试 {RETRY_COUNT} 次：{last_error}")
+    return {"success": False, "error": last_error}
+
+
 def money_symbol(currency):
     if currency == "CNY":
         return "¥"
@@ -133,13 +156,26 @@ def get_uptime():
 
 
 def get_service_status():
-    """检查自定义服务是否在运行，返回简洁状态字符串。"""
-    services = [
-        ("SS", "shadowsocks-rust"),
-        ("Bot", "deepseek-balance-bot"),
-    ]
+    """检查自定义服务是否在运行，返回简洁状态字符串。
+
+    通过环境变量 MONITOR_SERVICES 配置要监控的服务列表，
+    格式：Label1:service-name1,Label2:service-name2
+    示例：SS:shadowsocks-rust,Bot:deepseek-balance-bot
+
+    如未设置该变量，使用默认值：
+    SS:shadowsocks-rust,Bot:deepseek-balance-bot
+    """
+    raw = os.getenv("MONITOR_SERVICES", "SS:shadowsocks-rust,Bot:deepseek-balance-bot")
     parts = []
-    for label, name in services:
+    for segment in raw.split(","):
+        segment = segment.strip()
+        if not segment or ":" not in segment:
+            continue
+        label, name = segment.split(":", 1)
+        label = label.strip()
+        name = name.strip()
+        if not label or not name:
+            continue
         try:
             result = subprocess.run(
                 ["systemctl", "is-active", "--quiet", name],
@@ -334,8 +370,55 @@ def save_message_id(message_id):
         file.write(str(message_id))
 
 
+def acquire_lock():
+    """获取 PID 文件锁，防止多个常驻实例同时运行。返回 True 表示成功获取。"""
+    global _LOCK_HELD
+    if os.path.exists(PID_FILE):
+        try:
+            with open(PID_FILE, "r") as f:
+                old_pid = int(f.read().strip())
+            os.kill(old_pid, 0)
+            print(f"已有实例在运行 (PID {old_pid})，拒绝启动。")
+            return False
+        except PermissionError:
+            print(f"无法检查 PID 文件 {PID_FILE}（权限不足），拒绝启动。")
+            return False
+        except (OSError, ValueError):
+            try:
+                os.remove(PID_FILE)
+            except PermissionError:
+                print(f"无法删除过期 PID 文件 {PID_FILE}（权限不足），拒绝启动。")
+                return False
+
+    try:
+        with open(PID_FILE, "w") as f:
+            f.write(str(os.getpid()))
+    except PermissionError:
+        print(f"无法创建 PID 文件 {PID_FILE}（权限不足），拒绝启动。")
+        return False
+    _LOCK_HELD = True
+    return True
+
+
+def release_lock():
+    """释放 PID 文件锁。"""
+    global _LOCK_HELD
+    try:
+        if os.path.exists(PID_FILE):
+            os.remove(PID_FILE)
+    except PermissionError:
+        print(f"警告：无法删除 PID 文件 {PID_FILE}（权限不足），跳过。")
+    except OSError:
+        pass
+    _LOCK_HELD = False
+
+
 def main():
     require_config()
+
+    if not acquire_lock():
+        sys.exit(1)
+
     print("DeepSeek 余额监控脚本已启动...")
 
     msg_id = load_message_id()
@@ -449,3 +532,6 @@ if __name__ == "__main__":
             main()
     except KeyboardInterrupt:
         print("已停止。")
+    finally:
+        if _LOCK_HELD:
+            release_lock()
