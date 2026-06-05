@@ -1,11 +1,21 @@
 import html
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone, timedelta
 from urllib import error, request
+
+
+def handle_sigterm(signum, frame):
+    print("收到 SIGTERM 信号，正在安全退出...")
+    sys.exit(0)
+
+
+# 注册 SIGTERM 信号处理器，确保 systemd 停止/重启服务时能触发 finally 清理 PID 锁文件
+signal.signal(signal.SIGTERM, handle_sigterm)
 
 
 # 时区偏移（小时），可通过环境变量 TIMEZONE_OFFSET 设置，默认 +8（北京时间）
