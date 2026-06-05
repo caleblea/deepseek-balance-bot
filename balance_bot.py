@@ -295,8 +295,24 @@ def edit_message(message_id, text):
         if result.get("ok", False):
             return True
         else:
+            description = result.get("description", "")
+            if "not modified" in description:
+                print(f"消息内容未变化，无需更新")
+                return True
             print(f"修改消息失败：{result}")
             return False
+    except error.HTTPError as exc:
+        # HTTP 400 也可能是内容未变化，检查响应体
+        body = exc.read().decode("utf-8")
+        try:
+            data = json.loads(body)
+            if "not modified" in data.get("description", ""):
+                print(f"消息内容未变化，无需更新")
+                return True
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            pass
+        print(f"修改消息失败：HTTP {exc.code}：{exc.reason}")
+        return False
     except (error.URLError, json.JSONDecodeError) as exc:
         print(f"修改消息失败：{exc}")
         return False
