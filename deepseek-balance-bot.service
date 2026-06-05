@@ -9,8 +9,6 @@ WorkingDirectory=/opt/deepseek-balance-bot
 ExecStart=/usr/bin/python3 -u /opt/deepseek-balance-bot/balance_bot.py
 Restart=always
 RestartSec=10
-StandardOutput=append:/opt/deepseek-balance-bot/balance_bot.log
-StandardError=append:/opt/deepseek-balance-bot/balance_bot.log
 
 [Install]
 WantedBy=multi-user.target
